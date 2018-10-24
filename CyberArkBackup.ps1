@@ -1,11 +1,16 @@
-# -----------------------------------------------------------------------------
-# Script: CyberArkBackup.ps1
-# Author: Robert (Rob) Waight
-# Date: 04/22/2016
-# Keywords: 
-# comments: Version 1.1 -- Sensitive data removed so this can be shared
-#
-# -----------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Script  : CyberArkBackup.ps1
+# Author  : Robert (Rob) Waight
+# Date    : 10/23/2018
+# Version : 1.2
+# Keywords: PAReplicate, CyberArk, Backup
+# Comments: Use PowerShell to execute PAReplicate (the CyberArk Backup utility)
+#            this is used to ensure CyberArk backups are scheduled and executed.
+#           
+#           The extra logging and the transcript are built-in for audit support.
+# ------------------------------------------------------------------------------
+
+# Create a timer to track how long backups are taking to execute
 $script:startTime = Get-Date
 $Elapsed = [System.Diagnostics.Stopwatch]::StartNew()
 
@@ -14,14 +19,18 @@ $Elapsed = [System.Diagnostics.Stopwatch]::StartNew()
     $mTo="CyberArkAdmins@company.com"
     $mFrom="CyberArk_Backup_SVC@company.com"
     $mSMTP="mail.company.com"
+    # Configure anonymous credentials
     $anonUser = "anonymous"
     $anonPass = ConvertTo-SecureString "anonymous" -AsPlainText -Force
     $anonCred = New-Object System.Management.Automation.PSCredential($anonUser, $anonPass)
 
-# Store the Log file and transcript in the CyberArkBackup folder
+# Write to the servers Application log, so output can be collected by monitoring software
 $LogSource="CyberArk_Backup_SVC"
 New-EventLog -LogName Application -Source $LogSource
+
+# Store the Log file and transcript in the CyberArkBackup folder
 $zLogOut = "C:\PowerShell\CyberArkBackup"
+
 # Start the logfile
 if(-not(Test-Path -path $zLogOut))
     {
@@ -36,12 +45,13 @@ if(Test-Path -path $zLogOut -IsValid){
     $logfile="$zLogOut\CABackupLog_$(get-date -format `"yyyyMM`").log"
   }
 
-# Log function.  
+# Log function
 function Log($string, $color){
    if ($Color -eq $null) {$color = "white"}
    write-host $string -foregroundcolor $color
    $string | out-file -Filepath $logfile -append
 }
+# Event Log function
 function EventLog($String, $EventID, $Color){
    if ($Color -eq $null) {$Color = "white"}
    Write-Host $String -ForegroundColor $Color
