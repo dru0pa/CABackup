@@ -1,2 +1,2 @@
 # CABackup
-CyberArk Backup via PowerShell to execute PAReplicate, used to ensure CyberArk backups are scheduled and executed.
+Use PowerShell to execute PAReplicate (the CyberArk Backup utility), this is used to ensure CyberArk backups are scheduled and executed.
