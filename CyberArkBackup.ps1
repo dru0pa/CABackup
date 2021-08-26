@@ -1,13 +1,16 @@
 # ------------------------------------------------------------------------------
 # Script  : CyberArkBackup.ps1
 # Author  : Robert (Rob) Waight
-# Date    : 10/23/2018
-# Version : 1.2
-# Keywords: PAReplicate, CyberArk, Backup
+# Modified: Andrew Price
+# Date    : 06/15/2021
+# Version : 2
+# Keywords: PAReplicate, CyberArk, Backup, 7zip
 # Comments: Use PowerShell to execute PAReplicate (the CyberArk Backup utility)
 #            this is used to ensure CyberArk backups are scheduled and executed.
 #           
 #           The extra logging and the transcript are built-in for audit support.
+#
+#Location of the git hub file https://github.com/rwaight/CABackup
 # ------------------------------------------------------------------------------
 
 # Create a timer to track how long backups are taking to execute
@@ -15,18 +18,20 @@ $script:startTime = Get-Date
 $Elapsed = [System.Diagnostics.Stopwatch]::StartNew()
 
 # Create Email Variables, will send mail anonymously -- only if environment allows anon SMTP
-    $serv=$env:computername
-    $mTo="CyberArkAdmins@company.com"
-    $mFrom="CyberArk_Backup_SVC@company.com"
-    $mSMTP="mail.company.com"
+    #$serv=$env:computername
+    $serv="Vault Backup Server"
+    $mTo="cyberark@cyberark.lan"
+    $mFrom="cyberark@cyberark.lan"
+    $mSMTP="192.168.50.1"
+    #$mSmtpPort = "587"
     # Configure anonymous credentials
-    $anonUser = "anonymous"
-    $anonPass = ConvertTo-SecureString "anonymous" -AsPlainText -Force
-    $anonCred = New-Object System.Management.Automation.PSCredential($anonUser, $anonPass)
+    $anonUser = "cyberark@cyberark.lan"
+    $anonPass = ConvertTo-SecureString "Password@4" -AsPlainText -Force
+	$SmtpCred = New-Object -TypeName System.Management.Automation.PSCredential -ArgumentList $anonUser,$anonPass
 
 # Write to the servers Application log, so output can be collected by monitoring software
 $LogSource="CyberArk_Backup_SVC"
-New-EventLog -LogName Application -Source $LogSource
+#New-EventLog -LogName Application -Source $LogSource
 
 # Store the Log file and transcript in the CyberArkBackup folder
 $zLogOut = "C:\PowerShell\CyberArkBackup"
@@ -40,9 +45,9 @@ if(-not(Test-Path -path $zLogOut))
 
 # Start the transcript
 if(Test-Path -path $zLogOut -IsValid){
-    Start-Transcript -Path "$zLogOut\CABackupTranscript_$(Get-Date -format "yyyyMM").txt" -Append -NoClobber
-    # The logfile will contain entries for the entire month, if a daily log is needed, then change to "yyyyMMdd"
-    $logfile="$zLogOut\CABackupLog_$(get-date -format `"yyyyMM`").log"
+    Start-Transcript -Path "$zLogOut\CABackupTranscript_$(Get-Date -format "yyyyMMdd-HH-mm").txt" -Append -NoClobber
+    # The logfile will contain entries for the entire month, if a daily log is needed, then change to "yyyyMMdd-HH-mm"
+    $logfile="$zLogOut\CABackupLog_$(get-date -format `"yyyyMMdd-HH-mm`").log"
   }
 
 # Log function
@@ -55,8 +60,8 @@ function Log($string, $color){
 function EventLog($String, $EventID, $Color){
    if ($Color -eq $null) {$Color = "white"}
    Write-Host $String -ForegroundColor $Color
-   Write-EventLog Application -Source $LogSource -EventID $EventID -Message $String
-   #$string | out-file -Filepath $logfile -append
+#   Write-EventLog Application -Source $LogSource -EventID $EventID -Message $String
+   $string | out-file -Filepath $logfile -append
 }
 
 # Set date variables
@@ -88,24 +93,31 @@ $CABLogExport=$CABLog | Out-String
 if([bool]($CABLog -match "PAReplicate ended with errors")){
     EventLog $CABLogExport 0
     $CABResult=Get-Content .\cablog.txt | Select-Object -Last 2
-    $mAttach=".\cablog.txt"
+    Copy-Item "C:\Program Files (x86)\PrivateArk\Replicate\cablog.txt" C:\PowerShell\CyberArkBackup\folderzip\cablog.txt
+    Add-Content -Path C:\PowerShell\CyberArkBackup\folderzip\cablog.txt -Value (Get-Date) -PassThru
+    Compress-7Zip -ArchiveFileName .\zippedfile.zip -Path C:\PowerShell\CyberArkBackup\folderzip\cablog.txt -Format Zip -Password Passw0rd
+    $mAttach=".\zippedfile.zip"
     $subj="CyberArk Backup Finished with Errors"
     log "$subj, sending the log to $mTo"
     
     # Write message body and send email, attach the entire log file if there was an error
-    $mBody="Greetings CyberArk Admins!`n`nThe CyberArkBackup task has finished on $serv.`n`nThe results are as follows:`n`n$CABResult"
-    Send-MailMessage -To $mTo -Subject $subj -Body $mBody -From $mFrom -Credential $anonCred -SmtpServer $mSMTP -Attachments $mAttach
+    $mBody="Greetings CyberArk Admins!`n`nThe CyberArkBackup task has finished on $serv.`n"
+    Send-MailMessage -To $mTo -Subject $subj -Body $mBody -From $mFrom -Credential $anonCred -SmtpServer $mSMTP -Port 587 -Attachments $mAttach
     log "Email sent to $mTo!" Cyan
 }
 else{
     EventLog $CABLogExport 1
     $CABResult=Get-Content .\cablog.txt | Select-Object -Last 1
-    $subj="CyberArk Backup Finished"
+    Copy-Item "C:\Program Files (x86)\PrivateArk\Replicate\cablog.txt" C:\PowerShell\CyberArkBackup\folderzip\cablog.txt
+    Add-Content -Path C:\PowerShell\CyberArkBackup\folderzip\cablog.txt -Value (Get-Date) -PassThru
+    Compress-7Zip -ArchiveFileName .\zippedfile.zip -Path C:\PowerShell\CyberArkBackup\folderzip\cablog.txt -Format Zip -Password Passw0rd
+    $mAttach=".\zippedfile.zip"
+    $subj="CyberArk Backup Finished Successfully"
     log "$subj Successfully"
     
     # Write message body and send email
-    $mBody="Greetings CyberArk Admins!`n`nThe CyberArkBackup task has finished on $serv.`n`nThe results are as follows:`n`n$CABResult"
-    Send-MailMessage -To $mTo -Subject $subj -Body $mBody -From $mFrom -Credential $anonCred -SmtpServer $mSMTP
+    $mBody="Greetings CyberArk Admins!`n`nThe CyberArkBackup task has finished on $serv.`n"
+    Send-MailMessage -To $mTo -Subject $subj -Body $mBody -From $mFrom -SmtpServer $mSMTP -Port 25 -Attachments $mAttach
     log "Email sent to $mTo!" Cyan
 }
 
@@ -114,3 +126,4 @@ log "Total Elapsed Time: $($Elapsed.Elapsed.ToString())"
 EventLog "Script completed at $(get-date) -- Total Elapsed Time: $($Elapsed.Elapsed.ToString())" 4
 log ""
 Stop-Transcript
+
